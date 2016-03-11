@@ -165,6 +165,86 @@ deploy_simple () {
     fi
 }
 
+deploy_red_black_clean_first () {
+    log_and_echo "$LABEL" "Example red_black container deploy "
+    # deploy new version of the application
+    local MY_CONTAINER_NAME="${CONTAINER_NAME}_${BUILD_NUMBER}"
+    local FLOATING_IP=""
+    local IP_JUST_FOUND=""
+
+    # Cleaning up previous deployments. "
+    clean
+    RESULT=$?
+    if [ $RESULT -ne 0 ]; then
+        ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed to cleanup previous deployments after deployment of ${MY_CONTAINER_NAME}. $(get_error_info)"
+        exit $RESULT
+    fi
+ 
+    deploy_container ${MY_CONTAINER_NAME}
+    local RESULT=$?
+    if [ $RESULT -ne 0 ]; then
+        ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed deployment of ${MY_CONTAINER_NAME}. $(get_error_info)"
+        exit $RESULT
+    fi
+
+    # if we alredy discoved the floating IP in clean(), then we assign it to FLOATING_IP.
+    if [ -n "${DISCOVERED_FLOATING_IP}" ]; then
+        FLOATING_IP=$DISCOVERED_FLOATING_IP
+    fi
+
+    # check to see that I obtained a floating IP address
+    #ice inspect ${CONTAINER_NAME}_${BUILD_NUMBER} > inspect.log
+    #FLOATING_IP=$(cat inspect.log | grep "PublicIpAddress" | awk '{print $2}')
+    if [ "${FLOATING_IP}" = '""' ] || [ -z "${FLOATING_IP}" ]; then
+        log_and_echo "Check for the free IP, will attempt to reuse existing IP"
+        ice_retry_save_output ip list 2> /dev/null
+        FLOATING_IP=$(grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}[[:space:]]*$' iceretry.log | head -n 1)
+        #strip off whitespace
+        FLOATING_IP=${FLOATING_IP// /}
+        if [ -z "${FLOATING_IP}" ];then
+            log_and_echo "No any free IP address found. Requesting new IP"
+            ice_retry_save_output ip request 2> /dev/null
+            FLOATING_IP=$(awk '{print $4}' iceretry.log | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
+            RESULT=$?
+            if [ $RESULT -ne 0 ]; then
+                cat iceretry.log
+                log_and_echo "$ERROR" "Could not request a new, or reuse an existing IP address "
+                dump_info
+                ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed deployment of ${MY_CONTAINER_NAME}.  Unable to allocate IP address. $(get_error_info)"
+                exit 1
+            else
+                # strip off junk
+                temp="${FLOATING_IP%\"}"
+                FLOATING_IP="${temp#\"}"
+                log_and_echo "Assign new IP address $FLOATING_IP"
+            fi
+        else
+            log_and_echo "Reuse an existing IP address $FLOATING_IP"
+        fi
+        ice_retry ip bind ${FLOATING_IP} ${CONTAINER_NAME}_${BUILD_NUMBER} 2> /dev/null
+        RESULT=$?
+        if [ $RESULT -ne 0 ]; then
+            cat iceretry.log
+            log_and_echo "$ERROR" "Failed to bind ${FLOATING_IP} to ${CONTAINER_NAME}_${BUILD_NUMBER} "
+            log_and_echo "Unsetting TEST_URL"
+            export TEST_URL=""
+            dump_info
+            ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed binding of IP address to ${MY_CONTAINER_NAME}. $(get_error_info)"
+            exit 1
+        fi
+    fi
+    TEST_URL="${URL_PROTOCOL}${FLOATING_IP}:$(echo $PORT | sed 's/,/ /g' |  awk '{print $1;}')"
+    log_and_echo "Exporting TEST_URL:${TEST_URL}"
+    if [ ! -z ${DEPLOY_PROPERTY_FILE} ]; then
+        echo "export TEST_URL="${TEST_URL}"" >> "${DEPLOY_PROPERTY_FILE}"
+        echo "export TEST_IP="${FLOATING_IP}"" >> "${DEPLOY_PROPERTY_FILE}"
+        echo "export TEST_PORT="$(echo $PORT | sed 's/,/ /g' |  awk '{print $1;}')"" >> "${DEPLOY_PROPERTY_FILE}"
+    fi
+ 
+    log_and_echo "${green}Public IP address of ${CONTAINER_NAME}_${BUILD_NUMBER} is ${FLOATING_IP} and the TEST_URL is ${TEST_URL} ${no_color}"
+}
+
+
 deploy_red_black () {
     log_and_echo "$LABEL" "Example red_black container deploy "
     # deploy new version of the application
@@ -493,6 +573,8 @@ ${EXT_DIR}/utilities/sendMessage.sh -l info -m "New ${DEPLOY_TYPE} container dep
 
 if [ "${DEPLOY_TYPE}" == "red_black" ]; then
     deploy_red_black
+elif [ "${DEPLOY_TYPE}" == "red_black_clean_first" ]; then
+    deploy_red_black_clean_first
 elif [ "${DEPLOY_TYPE}" == "clean" ]; then
     clean
 else
