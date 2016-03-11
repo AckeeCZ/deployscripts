@@ -173,7 +173,7 @@ deploy_red_black_clean_first () {
     local IP_JUST_FOUND=""
 
     # Cleaning up previous deployments. "
-    BIND_TO_NEW=0 clean
+    NO_BIND=1 clean
     RESULT=$?
     if [ $RESULT -ne 0 ]; then
         ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed to cleanup previous deployments after deployment of ${MY_CONTAINER_NAME}. $(get_error_info)"
@@ -494,7 +494,7 @@ clean() {
                         sleep 2
                     fi
                     export NEW_CONTAINER_NAME=${CONTAINER_NAME}_${BUILD_NUMBER}
-                    if [ "$BIND_TO_NEW" == "1" ]; then
+                    if [ "$NO_BIND" != "1" ]; then
                       ice_retry ip bind ${FLOATING_IP} ${NEW_CONTAINER_NAME} 2> /dev/null
                       RESULT=$?
                       if [ $RESULT -ne 0 ]; then
