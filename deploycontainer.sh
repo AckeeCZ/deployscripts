@@ -173,7 +173,7 @@ deploy_red_black_clean_first () {
     local IP_JUST_FOUND=""
 
     # Cleaning up previous deployments. "
-    clean
+    BIND_TO_NEW=0 clean
     RESULT=$?
     if [ $RESULT -ne 0 ]; then
         ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed to cleanup previous deployments after deployment of ${MY_CONTAINER_NAME}. $(get_error_info)"
@@ -193,7 +193,7 @@ deploy_red_black_clean_first () {
     fi
 
     if [ ! -z "${NEW_CONTAINER_NAME}" ]; then
-        log_and_echo "Reusing previous IP"
+        log_and_echo "Reusing previous IP ${FLOATING_IP} and assigning it to ${NEW_CONTAINER_NAME}"
         ice_retry ip bind ${FLOATING_IP} ${NEW_CONTAINER_NAME} 2> /dev/null
         RESULT=$?
         if [ $RESULT -ne 0 ]; then
@@ -494,6 +494,15 @@ clean() {
                         sleep 2
                     fi
                     export NEW_CONTAINER_NAME=${CONTAINER_NAME}_${BUILD_NUMBER}
+                    if [ "$BIND_TO_NEW" == "1" ];
+                      ice_retry ip bind ${FLOATING_IP} ${NEW_CONTAINER_NAME} 2> /dev/null
+                      RESULT=$?
+                      if [ $RESULT -ne 0 ]; then
+                          log_and_echo "$WARN" "'$IC_COMMAND ip bind ${FLOATING_IP} ${CONTAINER_NAME}_${BUILD_NUMBER}' command failed with return code ${RESULT}"
+                          log_and_echo "$WARN" "Cleaning up previous deployments is not completed"
+                          return 0
+                      fi
+                    fi
                 fi
             fi
         fi
