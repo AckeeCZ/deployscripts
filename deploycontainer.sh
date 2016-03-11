@@ -494,7 +494,7 @@ clean() {
                         sleep 2
                     fi
                     export NEW_CONTAINER_NAME=${CONTAINER_NAME}_${BUILD_NUMBER}
-                    if [ "$BIND_TO_NEW" == "1" ];
+                    if [ "$BIND_TO_NEW" == "1" ]; then
                       ice_retry ip bind ${FLOATING_IP} ${NEW_CONTAINER_NAME} 2> /dev/null
                       RESULT=$?
                       if [ $RESULT -ne 0 ]; then
