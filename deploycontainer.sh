@@ -166,7 +166,7 @@ deploy_simple () {
 }
 
 deploy_red_black_clean_first () {
-    log_and_echo "$LABEL" "Example red_black container deploy "
+    log_and_echo "$LABEL" "Example red_black_clean_first container deploy "
     # deploy new version of the application
     local MY_CONTAINER_NAME="${CONTAINER_NAME}_${BUILD_NUMBER}"
     local FLOATING_IP=""
@@ -179,7 +179,12 @@ deploy_red_black_clean_first () {
         ${EXT_DIR}/utilities/sendMessage.sh -l bad -m "Failed to cleanup previous deployments after deployment of ${MY_CONTAINER_NAME}. $(get_error_info)"
         exit $RESULT
     fi
- 
+
+    # if we alredy discoved the floating IP in clean(), then we assign it to FLOATING_IP.
+    if [ -n "${DISCOVERED_FLOATING_IP}" ]; then
+        FLOATING_IP=$DISCOVERED_FLOATING_IP
+    fi
+
     deploy_container ${MY_CONTAINER_NAME}
     local RESULT=$?
     if [ $RESULT -ne 0 ]; then
@@ -187,9 +192,15 @@ deploy_red_black_clean_first () {
         exit $RESULT
     fi
 
-    # if we alredy discoved the floating IP in clean(), then we assign it to FLOATING_IP.
-    if [ -n "${DISCOVERED_FLOATING_IP}" ]; then
-        FLOATING_IP=$DISCOVERED_FLOATING_IP
+    if [ ! -z "${NEW_CONTAINER_NAME}" ]; then
+        log_and_echo "Reusing previous IP"
+        ice_retry ip bind ${FLOATING_IP} ${NEW_CONTAINER_NAME} 2> /dev/null
+        RESULT=$?
+        if [ $RESULT -ne 0 ]; then
+            log_and_echo "$WARN" "'$IC_COMMAND ip bind ${FLOATING_IP} ${CONTAINER_NAME}_${BUILD_NUMBER}' command failed with return code ${RESULT}"
+            log_and_echo "$WARN" "Cleaning up previous deployments is not completed"
+            return 0
+        fi
     fi
 
     # check to see that I obtained a floating IP address
@@ -482,13 +493,7 @@ clean() {
                         fi
                         sleep 2
                     fi
-                    ice_retry ip bind ${FLOATING_IP} ${CONTAINER_NAME}_${BUILD_NUMBER} 2> /dev/null
-                    RESULT=$?
-                    if [ $RESULT -ne 0 ]; then
-                        log_and_echo "$WARN" "'$IC_COMMAND ip bind ${FLOATING_IP} ${CONTAINER_NAME}_${BUILD_NUMBER}' command failed with return code ${RESULT}"
-                        log_and_echo "$WARN" "Cleaning up previous deployments is not completed"
-                        return 0
-                    fi
+                    export NEW_CONTAINER_NAME=${CONTAINER_NAME}_${BUILD_NUMBER}
                 fi
             fi
         fi
